@@ -1,16 +1,62 @@
 """
-This script shows the basic use of the PositionHlCommander class.
+EXAMPLE 1 - position commander demo
 
-Simple example that connects to the crazyflie at `URI` and runs a
-sequence. This script requires some kind of location system.
-
-The PositionHlCommander uses position setpoints.
-
-Change the URI variable to your Crazyflie configuration.
+The script allows you to control the Flapper in XYZ direction using the Position Commander (cflib.positioning.position_hl_commander)
+It is based on: 
+https://github.com/bitcraze/crazyflie-demos/blob/main/demos/scripts/cflib/autonomy/position_commander_demo/position_commander_demo.py
 """
 
-import time
 
+"""
+Basic usage of the Position Commander:
+--------------------------------------
+
+Going left, right, forward, back, up and down is done using the following commands:
+  pc.left(distance_m, velocity=DEFAULT):
+  pc.right(distance_m, velocity=DEFAULT):
+  pc.forward(distance_m, velocity=DEFAULT):
+  pc.back(distance_m, velocity=DEFAULT):
+  pc.up(distance_m, velocity=DEFAULT):
+  pc.down(distance_m, velocity=DEFAULT):
+
+  Where:
+    distance_m: The distance to travel (meters)
+    velocity: The velocity of the motion (meters/second). If not given, the default velocity is used. 
+  
+Moving in a straight line is done using the following command:
+  pc.move_distance(distance_x_m, distance_y_m, distance_z_m, velocity=DEFAULT):
+
+  Where:
+    distance_x_m: The distance to travel along the X-axis (meters)
+    distance_y_m: The distance to travel along the Y-axis (meters)
+    distance_z_m: The distance to travel along the Z-axis (meters)
+    velocity: The velocity of the motion (meters/second)
+
+Going to a specific position is done using the following command:
+  pc.go_to(x, y, z=DEFAULT, velocity=DEFAULT):
+
+  Where:
+    x: X coordinate
+    y: Y coordinate
+    z: Z coordinate
+    velocity: The velocity (meters/second)
+
+The default velocity can be set using:
+  pc.set_default_velocity(velocity)
+
+  Where:
+    velocity: The default velocity (meters/second)
+
+The default height can be set using:
+  pc.set_default_height(height)
+
+  Where:
+    height: The default height (meters)
+
+"""
+
+# Libraries we need
+import time
 import cflib.crtp
 from cflib.crazyflie import Crazyflie
 from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
@@ -23,8 +69,6 @@ uri = uri_helper.uri_from_env(default='radio://0/04/2M/FD04')
 
 def slightly_more_complex_usage():
     with SyncCrazyflie(uri, cf=Crazyflie(rw_cache='./cache')) as scf:
-        # Arm the Crazyflie
-        scf.cf.platform.send_arming_request(True)
         time.sleep(1.0)
 
         with PositionHlCommander(
@@ -33,7 +77,7 @@ def slightly_more_complex_usage():
                 default_velocity=0.3,
                 default_height=0.5,
                 controller=PositionHlCommander.CONTROLLER_PID) as pc:
-            # Go to a coordinate
+            # Go to a xyz coordinate
             pc.go_to(1.0, 1.0, 1.0)
 
             # Move relative to the current position
@@ -50,22 +94,16 @@ def slightly_more_complex_usage():
             pc.set_default_height(1.0)
             pc.go_to(0.0, 0.0)
 
-
-def land_on_elevated_surface():
-    with SyncCrazyflie(uri, cf=Crazyflie(rw_cache='./cache')) as scf:
-        # Arm the Crazyflie
-        scf.cf.platform.send_arming_request(True)
-        time.sleep(1.0)
-
-        with PositionHlCommander(scf,
-                                 default_height=0.5,
-                                 default_velocity=0.2,
-                                 default_landing_height=0.35,
-                                 controller=PositionHlCommander.CONTROLLER_PID) as pc:
-            # fly onto a landing platform at non-zero height (ex: from floor to desk, etc)
-            pc.forward(1.0)
-            pc.left(1.0)
-            # land() will be called on context exit, gradually lowering to default_landing_height, then stopping motors
+            # Use a for loop to got back and forth twice
+            for i in range(2):
+                pc.forward(1.0)
+                time.sleep(1.0)
+                pc.back(1.0)
+                time.sleep(1.0)
+            
+            # Set a low velocity for a smoother landing
+            pc.set_default_velocity(0.3)
+            # The flapper will land when the position commander exits
 
 
 def simple_sequence():
@@ -73,21 +111,34 @@ def simple_sequence():
         time.sleep(1.0)
 
         with PositionHlCommander(scf, controller=PositionHlCommander.CONTROLLER_PID) as pc:
-            for i in range(2):
-              time.sleep(2)
-              pc.forward(1)
-              pc.left(1)
-              pc.back(1)
-              pc.right(1)
-            time.sleep(2)
-            pc.go_to(0.0, 0.0, 1.0)
+            # The flapper will take off once the position commander is initialized
+            
+            # We can add a pause to let the flapper hover for 2 seconds before starting the sequence
+            time.sleep(2) 
 
-            pc.set_default_velocity(0.3) # lower velocity for a successful landing
+            # Move the flapper in a square pattern  
+            pc.forward(1)
+            pc.left(1)
+            pc.back(1)
+            pc.right(1)
+            
+            time.sleep(2)
+            
+            # Climb up 1 meter
+            pc.up(1.0)
+
+            time.sleep(2)
+            
+            # Set a low velocity for a smoother landing
+            pc.set_default_velocity(0.3) 
+            
+            # The flapper will land when the position commander exits
 
 
 if __name__ == '__main__':
+    # initialize the communication drivers
     cflib.crtp.init_drivers()
 
-    simple_sequence()
-    # slightly_more_complex_usage()
-    # land_on_elevated_surface()
+    # run the example sequence
+    # simple_sequence()
+    slightly_more_complex_usage()
