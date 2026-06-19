@@ -140,5 +140,5 @@ if __name__ == '__main__':
     cflib.crtp.init_drivers()
 
     # run the example sequence
-    # simple_sequence()
-    slightly_more_complex_usage()
+    simple_sequence()
+    # slightly_more_complex_usage()
