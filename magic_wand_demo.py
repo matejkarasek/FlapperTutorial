@@ -35,6 +35,8 @@ import matplotlib.pyplot as plt
 URI_Flapper = 'radio://0/04/2M/FD04'  # Flapper
 URI_Magic_Wand = 'radio://0/04/2M/CF00'  # Magic Wand
 
+flight_duration = 40
+
 DEFAULT_HEIGHT = 0.5
 DEFAULT_VELOCITY = 0.5
 xF = []
@@ -60,10 +62,6 @@ uris = {
 }
 
 global time_start
-
-def arm(scf):
-    scf.cf.platform.send_arming_request(True)
-    time.sleep(1.0)
 
 def pose_callback(uri, data):
     if timeMW == [] and timeF == []:
@@ -99,7 +97,6 @@ def start_pose_logging(scf):
     log_conf1.data_received_cb.add_callback(lambda _timestamp, data, _logconf: pose_callback(scf.cf.link_uri, data))
     log_conf1.start()
 
-flight_duration = 20
 
 def follow(scf):
     uri = scf.__dict__['_link_uri']
@@ -121,13 +118,13 @@ def follow(scf):
                 # Desired position = latest Magic_Wand position + offset
                 x_desired = xMW[-1] + dx
                 y_desired = yMW[-1] + dy
-                z_desired = zMW[-1] + dz
+                z_desired = max(zMW[-1] + dz, DEFAULT_HEIGHT) # assures minimal flight height at least 0.5 m
 
                 # Position error = latest Flapper position - desired position
                 error_x = x_desired - xF[-1]
                 error_y = y_desired - yF[-1]
                 error_z = z_desired - zF[-1]
-                
+
                 # Proportional gain: 1m error ==> 2 m/s desired velocity
                 Kp = 2 # control loop will get unstable if too high
 
@@ -192,8 +189,6 @@ if __name__ == '__main__':
     with Swarm(uris, factory=factory) as swarm:
 
         swarm.reset_estimators()
-
-        swarm.parallel_safe(arm)
 
         swarm.parallel_safe(start_pose_logging)
         time.sleep(1)
