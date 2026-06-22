@@ -1,25 +1,14 @@
-'''
-Example of a swarm sharing data and performing a leader-follower scenario
-using the motion commander.
+"""
+EXAMPLE 3 - Magic wand demo
 
-The swarm takes off and the drones hover until the follower's local coordinate
-system is aligned with the global one. Then, the leader performs its own
-trajectory based on commands from the motion commander. The follower is
-constantly commanded to keep a defined distance from the leader, meaning that
-it is moving towards the leader when their current distance is larger than the
-defined one and away from the leader in the opposite scenario.
-All movements refer to the local coordinate system of each drone.
+This example shows data logging, data sharing and performing a target following scenario
+using live sensor data and the motion commander. 
 
-This example is intended to work with an absolute positioning system, it has
-been tested with the lighthouse positioning system.
-
-This example aims at documenting how to use the collected data to define new
-trajectories in real-time. It also indicates how to use the swarm class to
-feed the Crazyflies completely different asynchronized trajectories in parallel.
+A swarm framework is used because the "magic wand" is in fact another flight controller
 
 The example is based on the following script:
 https://github.com/bitcraze/crazyflie-demos/blob/main/demos/scripts/cflib/swarm/leader_follower/leader_follower.py
-'''
+"""
 import math
 import time
 
@@ -35,10 +24,13 @@ import matplotlib.pyplot as plt
 URI_Flapper = 'radio://0/04/2M/FD04'  # Flapper
 URI_Magic_Wand = 'radio://0/04/2M/CF00'  # Magic Wand
 
-flight_duration = 40
 
+# Define how long we want to fly, default height and velocity
+flight_duration = 40 # seconds
 DEFAULT_HEIGHT = 0.5
 DEFAULT_VELOCITY = 0.5
+
+# We create empty list variable, to which we will store the telemetry data
 xF = []
 yF = []
 zF = []
@@ -61,8 +53,10 @@ uris = {
     URI_Magic_Wand,
 }
 
+# We define global time_start varibale, such that it can be accesssed globally
 global time_start
 
+# Callback that will parse the incoming data and store it
 def pose_callback(uri, data):
     if timeMW == [] and timeF == []:
         global time_start
@@ -84,7 +78,7 @@ def pose_callback(uri, data):
         yawMW.append(data['stateEstimate.yaw'])
         timeMW.append(time.time()-time_start)
 
-
+# We set-up what "logging variables" will be logged and start the callback
 def start_pose_logging(scf):
     log_conf1 = LogConfig(name='Pose', period_in_ms=20)
     log_conf1.add_variable('stateEstimate.x', 'float')
@@ -97,10 +91,11 @@ def start_pose_logging(scf):
     log_conf1.data_received_cb.add_callback(lambda _timestamp, data, _logconf: pose_callback(scf.cf.link_uri, data))
     log_conf1.start()
 
-
+# The following function
 def follow(scf):
     uri = scf.__dict__['_link_uri']
 
+    # First we handle what the Flapper will do
     if uri == URI_Flapper:
         
         # Get initial offset between the Magic_Wand and the Flapper
@@ -162,6 +157,7 @@ def follow(scf):
             time.sleep(0.1)
         print("Magic_Wand loop finished.")
 
+# Function plotting the recorded data
 def plot_data():
   fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(8, 6), sharex=True)
 
@@ -185,16 +181,21 @@ def plot_data():
 if __name__ == '__main__':
     cflib.crtp.init_drivers()
 
+    # We create a cache and connect to all drones/flight controllers with give URIs
     factory = CachedCfFactory(rw_cache='./cache')
     with Swarm(uris, factory=factory) as swarm:
 
+        # We reset their position estimaters 
         swarm.reset_estimators()
 
+        # We start logging their pose
         swarm.parallel_safe(start_pose_logging)
         time.sleep(1)
 
+        # We start the followign function
         swarm.parallel_safe(follow)
         time.sleep(1)
 
+    # We plot the data
     plot_data()
     

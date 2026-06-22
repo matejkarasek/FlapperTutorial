@@ -1,9 +1,11 @@
 """
 EXAMPLE 1 - position commander demo
 
-The script allows you to control the Flapper in XYZ direction using the Position Commander (cflib.positioning.position_hl_commander)
-It is based on: 
+The script allows you to control the Flapper in XYZ directions using the Position Commander (cflib.positioning.position_hl_commander)
+The example is based on this script: 
 https://github.com/bitcraze/crazyflie-demos/blob/main/demos/scripts/cflib/autonomy/position_commander_demo/position_commander_demo.py
+And uses the position HL commander documented here:
+https://www.bitcraze.io/documentation/repository/crazyflie-lib-python/master/api/cflib/positioning/position_hl_commander/
 """
 
 
@@ -11,7 +13,7 @@ https://github.com/bitcraze/crazyflie-demos/blob/main/demos/scripts/cflib/autono
 Basic usage of the Position Commander:
 --------------------------------------
 
-Going left, right, forward, back, up and down is done using the following commands:
+Going left, right, forward, back, up and down (relative to the latest setpoint):
   pc.left(distance_m, velocity=DEFAULT):
   pc.right(distance_m, velocity=DEFAULT):
   pc.forward(distance_m, velocity=DEFAULT):
@@ -23,7 +25,7 @@ Going left, right, forward, back, up and down is done using the following comman
     distance_m: The distance to travel (meters)
     velocity: The velocity of the motion (meters/second). If not given, the default velocity is used. 
   
-Moving in a straight line is done using the following command:
+Moving in a straight line (relative to the latest setpoint):
   pc.move_distance(distance_x_m, distance_y_m, distance_z_m, velocity=DEFAULT):
 
   Where:
@@ -32,7 +34,7 @@ Moving in a straight line is done using the following command:
     distance_z_m: The distance to travel along the Z-axis (meters)
     velocity: The velocity of the motion (meters/second)
 
-Going to a specific position is done using the following command:
+Going to an absolute position:
   pc.go_to(x, y, z=DEFAULT, velocity=DEFAULT):
 
   Where:
@@ -63,7 +65,7 @@ from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
 from cflib.positioning.position_hl_commander import PositionHlCommander
 from cflib.utils import uri_helper
 
-# URI to the Crazyflie to connect to
+# URI (Uniform Resource Identifier) of the Flapper in the format "radio://[radio_dongle_ID]/[radio_channel]/[bitrate]/[address]"
 uri = 'radio://0/04/2M/FD04'
 
 
@@ -77,6 +79,7 @@ def slightly_more_complex_usage():
                 default_velocity=0.3,
                 default_height=0.5,
                 controller=PositionHlCommander.CONTROLLER_PID) as pc:
+            
             # Go to a xyz coordinate
             pc.go_to(1.0, 1.0, 1.0)
 
@@ -107,9 +110,11 @@ def slightly_more_complex_usage():
 
 
 def simple_sequence():
+    # We create a synchronous Crazyflie instance for the Flapper with the specified URI
     with SyncCrazyflie(uri, cf=Crazyflie(rw_cache='./cache')) as scf:
         time.sleep(1.0)
 
+        # In this example, position high-level commander is used
         with PositionHlCommander(scf, controller=PositionHlCommander.CONTROLLER_PID) as pc:
             # The flapper will take off once the position commander is initialized
             
