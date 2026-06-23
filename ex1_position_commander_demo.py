@@ -66,7 +66,7 @@ from cflib.positioning.position_hl_commander import PositionHlCommander
 from cflib.utils import uri_helper
 
 # URI (Uniform Resource Identifier) of the Flapper in the format "radio://[radio_dongle_ID]/[radio_channel]/[bitrate]/[address]"
-uri = 'radio://0/04/2M/FD04'
+uri = 'radio://0/04/2M/FD00'
 
 
 def slightly_more_complex_usage():

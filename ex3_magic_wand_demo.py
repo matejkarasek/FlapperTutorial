@@ -21,8 +21,8 @@ from cflib.positioning.motion_commander import MotionCommander
 import matplotlib.pyplot as plt
 
 # Change uris according to your setup, both need to be on the same radio channel and datarate
-URI_Flapper = 'radio://0/04/2M/FD04'  # Flapper
-URI_Magic_Wand = 'radio://0/04/2M/CF00'  # Magic Wand
+URI_Flapper = 'radio://0/04/2M/FD00'  # Flapper
+URI_Magic_Wand = 'radio://0/04/2M/CF99'  # Magic Wand
 
 
 # Define how long we want to fly, default height and velocity

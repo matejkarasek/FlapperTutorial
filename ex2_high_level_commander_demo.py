@@ -68,7 +68,7 @@ from cflib.utils.reset_estimator import reset_estimator
 
 # URI to the Crazyflie to connect to
 # uri = uri_helper.uri_from_env(default='radio://0/04/2M/FD04')
-uri = 'radio://0/04/2M/FD04'
+uri = 'radio://0/04/2M/FD00'
 
 
 # Function to set an RGB color of the onboard LEDs and fade into it within the specified time
@@ -91,7 +91,7 @@ def set_RGB_color(scf, r, g, b, intensity, time):
     color = (int(r) << 16) | (int(g) << 8) | int(b)
     
     # set the color of the new RGB color 
-    scf.param.set_value('ring.fadeColor', str(color))
+    scf.cf.param.set_value('ring.fadeColor', str(color))
 
 def run_sequence(scf):
     commander = scf.cf.high_level_commander
@@ -124,9 +124,10 @@ def run_sequence(scf):
       commander.spiral(pi/2, 0.5, 0.5, 0, 1, sideways=False, clockwise=False)
       time.sleep(1.0)
     
-    # We make a spiral with a 0.5 m start radius and 0.75 m end radius, while climbing 0.5 m. The drone will fly sideways
-    commander.spiral(2*pi, 0.5, 0.75, 0.5, 4, sideways=True, clockwise=False)
     time.sleep(2.0)
+    # We make a spiral with a 0.5 m start radius and 0.5 m end radius, while climbing 0.5 m. The drone will fly sideways
+    commander.spiral(pi, 0.5, 0.5, 0.5, 4, sideways=True, clockwise=False)
+    time.sleep(5.0)
     
     # We go to [0, 0, 1] position and 0 deg yaw angle
     commander.go_to(0.0, 0.0, 1.0, 0.0, 2)
