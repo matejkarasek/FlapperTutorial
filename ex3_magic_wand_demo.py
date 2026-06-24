@@ -142,8 +142,10 @@ def follow(scf):
                 v_body_x = v_world_x * cos_yaw + v_world_y * sin_yaw
                 v_body_y = -v_world_x * sin_yaw + v_world_y * cos_yaw
                 v_body_z = v_world_z  # no change here
+                yaw_rate = 0
 
-                mc.start_linear_motion(v_body_x, v_body_y, v_body_z)
+                mc.start_linear_motion(v_body_x, v_body_y, v_body_z, yaw_rate) # body velocities in m/s, yaw rate in deg/s
+                 
                 
                 time.sleep(0.02)  # loop at 50 Hz
             
