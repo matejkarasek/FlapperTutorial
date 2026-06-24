@@ -1,7 +1,10 @@
 import logging
+import sys
+import termios
+import tty
 import time
+import select
 import matplotlib.pyplot as plt
-from pynput import keyboard
 
 import cflib.crtp
 from cflib.crazyflie import Crazyflie
@@ -11,7 +14,7 @@ from cflib.positioning.motion_commander import MotionCommander
 from cflib.utils import uri_helper
 
 # Change the URI to match your Crazyflie's setup
-URI = uri_helper.uri_from_env(default='radio://0/04/2M/FD00')
+URI = uri_helper.uri_from_env(default='radio://0/08/2M/FD17')
 
 logging.basicConfig(level=logging.ERROR)
 
@@ -33,38 +36,22 @@ def log_data_callback(timestamp, data, logconf):
     if start_time is None:
         start_time = timestamp
     
-    # Store the data
     timestamps.append((timestamp - start_time) / 1000.0)  # Convert to seconds
     z_estimates.append(data['stateEstimate.z'])
     baro_pressures.append(data['baro.pressure'])
 
 
-def on_press(key):
-    global vx, vy, vz, yaw_rate
-    try:
-        if key.char == 'w':      vx = SPEED
-        elif key.char == 's':    vx = -SPEED
-        elif key.char == 'a':    vy = SPEED
-        elif key.char == 'd':    vy = -SPEED
-        elif key.char == 'i':    vz = SPEED
-        elif key.char == 'k':    vz = -SPEED
-        elif key.char == 'j':    yaw_rate = YAW_SPEED
-        elif key.char == 'l':    yaw_rate = -YAW_SPEED
-    except AttributeError:
-        pass
-
-
-def on_release(key):
-    global vx, vy, vz, yaw_rate
-    try:
-        if key.char in ['w', 's']:   vx = 0.0
-        elif key.char in ['a', 'd']: vy = 0.0
-        elif key.char in ['i', 'k']: vz = 0.0
-        elif key.char in ['j', 'l']: yaw_rate = 0.0
-    except AttributeError:
-        if key == keyboard.Key.esc:
-            print("Escape pressed. Landing...")
-            return False
+def get_key(settings):
+    """Reads a single keypress from the terminal without blocking."""
+    tty.setraw(sys.stdin.fileno())
+    # Wait up to 0.05 seconds for input
+    rlist, _, _ = select.select([sys.stdin], [], [], 0.05)
+    if rlist:
+        key = sys.stdin.read(1)
+    else:
+        key = ''
+    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
+    return key
 
 
 def plot_data():
@@ -73,65 +60,81 @@ def plot_data():
         print("No data collected to plot.")
         return
 
-    print("Generating plots...")
+    print("\nGenerating plots...")
     fig, ax1 = plt.subplots(figsize=(10, 5))
 
-    # Plot State Estimate Z on the left Y-axis
     color = 'tab:blue'
     ax1.set_xlabel('Time (s)')
     ax1.set_ylabel('State Estimate Z (m)', color=color)
     ax1.plot(timestamps, z_estimates, color=color, label='Z Estimate')
     ax1.tick_params(axis='y', labelcolor=color)
 
-    # Create a secondary Y-axis to plot Barometric Pressure
     ax2 = ax1.twinx()
     color = 'tab:red'
     ax2.set_ylabel('Baro Pressure (hPa)', color=color)
     ax2.plot(timestamps, baro_pressures, color=color, linestyle='--', label='Baro Pressure')
     ax2.tick_params(axis='y', labelcolor=color)
 
-    plt.title('Flapper Height vs Barometric Pressure Over Time')
+    plt.title('Crazyflie Altitude vs Barometric Pressure Over Time')
     fig.tight_layout()
     plt.show()
 
 
 if __name__ == '__main__':
+    # Save the original terminal settings so we can restore them later
+    old_settings = termios.tcgetattr(sys.stdin)
+    
     cflib.crtp.init_drivers()
 
     print("Connecting to Flapper...")
-    with SyncCrazyflie(URI, cf=Crazyflie(rw_cache='./cache')) as scf:
-        
-        # 1. Set up the Log Configuration
-        log_config = LogConfig(name='AltitudeBaro', period_in_ms=100) # 10Hz logging
-        log_config.add_variable('stateEstimate.z', 'float')
-        log_config.add_variable('baro.pressure', 'float')
-        
-        # 2. Register the callback and start logging
-        scf.cf.log.add_config(log_config)
-        log_config.data_received_cb.add_callback(log_data_callback)
-        log_config.start()
-        
-        # 3. Enter flight control loop
-        with MotionCommander(scf, default_height=0.4) as mc:
-            print("\n--- Controls ---")
-            print("  W/S : Forward / Backward")
-            print("  A/D : Left / Right")
-            print("  I/K : Up / Down")
-            print("  J/L : Turn Left / Turn Right")
-            print("  ESC : Land and Exit")
-            print("----------------")
+    try:
+        with SyncCrazyflie(URI, cf=Crazyflie(rw_cache='./cache')) as scf:
+            
+            # Set up the Log Configuration
+            log_config = LogConfig(name='AltitudeBaro', period_in_ms=100)
+            log_config.add_variable('stateEstimate.z', 'float')
+            log_config.add_variable('baro.pressure', 'float')
+            
+            scf.cf.log.add_config(log_config)
+            log_config.data_received_cb.add_callback(log_data_callback)
+            log_config.start()
+            
+            with MotionCommander(scf, default_height=0.4) as mc:
+                print("\n--- Controls (VNC/SSH Compatible) ---")
+                print("  W/S : Forward / Backward")
+                print("  A/D : Left / Right")
+                print("  I/K : Up / Down")
+                print("  J/L : Turn Left / Turn Right")
+                print("  SPACE: Stop / Hover")
+                print("  Q   : Land and Exit")
+                print("-------------------------------------")
 
-            listener = keyboard.Listener(on_press=on_press, on_release=on_release)
-            listener.start()
+                running = True
+                while running:
+                    # Capture the key inside the active loop
+                    key = get_key(old_settings)
+                    
+                    if key == 'w':      vx, vy, vz, yaw_rate = SPEED, 0.0, 0.0, 0.0
+                    elif key == 's':    vx, vy, vz, yaw_rate = -SPEED, 0.0, 0.0, 0.0
+                    elif key == 'a':    vx, vy, vz, yaw_rate = 0.0, SPEED, 0.0, 0.0
+                    elif key == 'd':    vx, vy, vz, yaw_rate = 0.0, -SPEED, 0.0, 0.0
+                    elif key == 'i':    vx, vy, vz, yaw_rate = 0.0, 0.0, SPEED, 0.0
+                    elif key == 'k':    vx, vy, vz, yaw_rate = 0.0, 0.0, -SPEED, 0.0
+                    elif key == 'j':    vx, vy, vz, yaw_rate = 0.0, 0.0, 0.0, YAW_SPEED
+                    elif key == 'l':    vx, vy, vz, yaw_rate = 0.0, 0.0, 0.0, -YAW_SPEED
+                    elif key == ' ':    vx, vy, vz, yaw_rate = 0.0, 0.0, 0.0, 0.0 # Spacebar to hover
+                    elif key == 'q':    # 'q' key to land safely
+                        print("\nLanding initiated...")
+                        running = False
 
-            while listener.running:
-                mc.start_linear_motion(vx, vy, vz, yaw_rate)
-                time.sleep(0.1)
+                    mc.start_linear_motion(vx, vy, vz, yaw_rate)
+                    time.sleep(0.1)  # 10Hz control cycle
 
-            print("Control loop finished. Clean landing initiated...")
-        
-        # 4. Stop logging after landing
-        log_config.stop()
+                log_config.stop()
 
-    # 5. Plot the data after the communication blocks are closed and drone is safe
-    plot_data()
+        # Show the plot once the drone is landed and disconnected
+        plot_data()
+
+    finally:
+        # Always restore original terminal settings even if the script crashes
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
