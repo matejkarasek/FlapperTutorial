@@ -1,9 +1,8 @@
 import logging
 import sys
-import termios
-import tty
 import time
 import select
+import threading
 import matplotlib.pyplot as plt
 
 import cflib.crtp
@@ -13,15 +12,24 @@ from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
 from cflib.positioning.motion_commander import MotionCommander
 from cflib.utils import uri_helper
 
+IS_WINDOWS = sys.platform.startswith('win')
+
+if IS_WINDOWS:
+    import msvcrt
+else:
+    import termios
+    import tty
+
 # Change the URI to match your Crazyflie's setup
-URI = uri_helper.uri_from_env(default='radio://0/08/2M/FD17')
+URI = uri_helper.uri_from_env(default='radio://0/04/2M/FD00')
 
 logging.basicConfig(level=logging.ERROR)
 
-# Global variables for control
+# Global variables for thread control and velocities
 vx, vy, vz, yaw_rate = 0.0, 0.0, 0.0, 0.0
 SPEED = 0.5
 YAW_SPEED = 45.0
+running = True
 
 # Lists to store logged data for plotting
 z_estimates = []
@@ -31,31 +39,53 @@ start_time = None
 
 
 def log_data_callback(timestamp, data, logconf):
-    """Callback function triggered whenever new log data arrives."""
     global start_time
     if start_time is None:
         start_time = timestamp
     
-    timestamps.append((timestamp - start_time) / 1000.0)  # Convert to seconds
+    timestamps.append((timestamp - start_time) / 1000.0)
     z_estimates.append(data['stateEstimate.z'])
     baro_pressures.append(data['baro.pressure'])
 
 
-def get_key(settings):
-    """Reads a single keypress from the terminal without blocking."""
-    tty.setraw(sys.stdin.fileno())
-    # Wait up to 0.05 seconds for input
-    rlist, _, _ = select.select([sys.stdin], [], [], 0.05)
-    if rlist:
-        key = sys.stdin.read(1)
-    else:
+def keyboard_listener_thread(linux_settings):
+    """Dedicated thread to capture keys instantly without losing them."""
+    global vx, vy, vz, yaw_rate, running
+    
+    while running:
         key = ''
-    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
-    return key
+        if IS_WINDOWS:
+            if msvcrt.kbhit():
+                try:
+                    key = msvcrt.getch().decode('utf-8').lower()
+                except UnicodeDecodeError:
+                    pass
+        else:
+            # Linux / Pi VNC Input capture
+            tty.setraw(sys.stdin.fileno())
+            rlist, _, _ = select.select([sys.stdin], [], [], 0.02) # Fast polling
+            if rlist:
+                key = sys.stdin.read(1).lower()
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, linux_settings)
+
+        if key:
+            if key == 'w':      vx, vy, vz, yaw_rate = SPEED, 0.0, 0.0, 0.0
+            elif key == 's':    vx, vy, vz, yaw_rate = -SPEED, 0.0, 0.0, 0.0
+            elif key == 'a':    vx, vy, vz, yaw_rate = 0.0, SPEED, 0.0, 0.0
+            elif key == 'd':    vx, vy, vz, yaw_rate = 0.0, -SPEED, 0.0, 0.0
+            elif key == 'i':    vx, vy, vz, yaw_rate = 0.0, 0.0, SPEED, 0.0
+            elif key == 'k':    vx, vy, vz, yaw_rate = 0.0, 0.0, -SPEED, 0.0
+            elif key == 'j':    vx, vy, vz, yaw_rate = 0.0, 0.0, 0.0, YAW_SPEED
+            elif key == 'l':    vx, vy, vz, yaw_rate = 0.0, 0.0, 0.0, -YAW_SPEED
+            elif key == ' ':    vx, vy, vz, yaw_rate = 0.0, 0.0, 0.0, 0.0
+            elif key == 'q':
+                print("\nLanding initiated...")
+                running = False
+        
+        time.sleep(0.01) # Keep the CPU happy
 
 
 def plot_data():
-    """Generates the plots after landing."""
     if not z_estimates:
         print("No data collected to plot.")
         return
@@ -81,16 +111,16 @@ def plot_data():
 
 
 if __name__ == '__main__':
-    # Save the original terminal settings so we can restore them later
-    old_settings = termios.tcgetattr(sys.stdin)
+    old_settings = None
+    if not IS_WINDOWS:
+        old_settings = termios.tcgetattr(sys.stdin)
     
     cflib.crtp.init_drivers()
 
-    print("Connecting to Flapper...")
+    print("Connecting to Crazyflie...")
     try:
         with SyncCrazyflie(URI, cf=Crazyflie(rw_cache='./cache')) as scf:
             
-            # Set up the Log Configuration
             log_config = LogConfig(name='AltitudeBaro', period_in_ms=100)
             log_config.add_variable('stateEstimate.z', 'float')
             log_config.add_variable('baro.pressure', 'float')
@@ -100,7 +130,7 @@ if __name__ == '__main__':
             log_config.start()
             
             with MotionCommander(scf, default_height=0.4) as mc:
-                print("\n--- Controls (VNC/SSH Compatible) ---")
+                print(f"\n--- Controls ({'Windows' if IS_WINDOWS else 'VNC/SSH'} Mode) ---")
                 print("  W/S : Forward / Backward")
                 print("  A/D : Left / Right")
                 print("  I/K : Up / Down")
@@ -109,32 +139,20 @@ if __name__ == '__main__':
                 print("  Q   : Land and Exit")
                 print("-------------------------------------")
 
-                running = True
-                while running:
-                    # Capture the key inside the active loop
-                    key = get_key(old_settings)
-                    
-                    if key == 'w':      vx, vy, vz, yaw_rate = SPEED, 0.0, 0.0, 0.0
-                    elif key == 's':    vx, vy, vz, yaw_rate = -SPEED, 0.0, 0.0, 0.0
-                    elif key == 'a':    vx, vy, vz, yaw_rate = 0.0, SPEED, 0.0, 0.0
-                    elif key == 'd':    vx, vy, vz, yaw_rate = 0.0, -SPEED, 0.0, 0.0
-                    elif key == 'i':    vx, vy, vz, yaw_rate = 0.0, 0.0, SPEED, 0.0
-                    elif key == 'k':    vx, vy, vz, yaw_rate = 0.0, 0.0, -SPEED, 0.0
-                    elif key == 'j':    vx, vy, vz, yaw_rate = 0.0, 0.0, 0.0, YAW_SPEED
-                    elif key == 'l':    vx, vy, vz, yaw_rate = 0.0, 0.0, 0.0, -YAW_SPEED
-                    elif key == ' ':    vx, vy, vz, yaw_rate = 0.0, 0.0, 0.0, 0.0 # Spacebar to hover
-                    elif key == 'q':    # 'q' key to land safely
-                        print("\nLanding initiated...")
-                        running = False
+                # Start the background keyboard grabber thread
+                input_thread = threading.Thread(target=keyboard_listener_thread, args=(old_settings,))
+                input_thread.daemon = True
+                input_thread.start()
 
+                # Main thread handles the strict 10Hz heartbeat to the Crazyflie
+                while running:
                     mc.start_linear_motion(vx, vy, vz, yaw_rate)
-                    time.sleep(0.1)  # 10Hz control cycle
+                    time.sleep(0.1)
 
                 log_config.stop()
 
-        # Show the plot once the drone is landed and disconnected
         plot_data()
 
     finally:
-        # Always restore original terminal settings even if the script crashes
-        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+        if not IS_WINDOWS and old_settings:
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
